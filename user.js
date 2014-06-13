@@ -6,6 +6,7 @@ var crypto = require('crypto')
 
 var _    = require('underscore')
 var uuid = require('node-uuid')
+var jwt = require('jsonwebtoken')
 
 
 // WARNING: this plugin is for *internal* use, DO NOT expose via an API.
@@ -26,7 +27,7 @@ module.exports = function user(options) {
   var seneca = this
 
   // # Plugin options.
-  // These are the defaults. You can override using the _options_ argument.  
+  // These are the defaults. You can override using the _options_ argument.
   // Example: `seneca.use("user",{mustrepeat:true})`.
   options = seneca.util.deepextend({
     role:        'user',
@@ -48,9 +49,11 @@ module.exports = function user(options) {
     reset:{
       fields:[]
     },
+    tokensecret:'elvis',
+    jwtoptions: { expiresInMinutes: 60*5 }
   },options)
 
-  
+
   // You can change the _role_ value for the plugin patterns.
   // Use this when you want to load multiple versions of the plugin
   // and expose them via different patterns.
@@ -72,9 +75,9 @@ module.exports = function user(options) {
 
 
   // ### Encrypt a plain text password string
-  // Pattern: _**role**:user, **cmd**:encrypt_password_  
+  // Pattern: _**role**:user, **cmd**:encrypt_password_
   seneca.add({
-    role: role, 
+    role: role,
     cmd:  'encrypt_password',
 
     password: {type:'string$'}, // password plain text string
@@ -87,7 +90,7 @@ module.exports = function user(options) {
   // Pattern: _**role**:user, **cmd**:verify_password_
   // Has the user entered the correct password?
   seneca.add({
-    role: role, 
+    role: role,
     cmd:  'verify_password',
 
     proposed: {required$:true,string$:true},
@@ -98,11 +101,11 @@ module.exports = function user(options) {
 
 
   // ### Change password
-  // Pattern: _**role**:user, **cmd**:change_password_  
+  // Pattern: _**role**:user, **cmd**:change_password_
   seneca.add({
-    role: role, 
+    role: role,
     cmd:  'change_password',
-    
+
     // identify user, various options
     atleastone$:['nick','email','user','username'],
     nick:     {string$:true},
@@ -117,9 +120,9 @@ module.exports = function user(options) {
 
 
   // ### Register a new user
-  // Pattern: _**role**:user, **cmd**:register_  
+  // Pattern: _**role**:user, **cmd**:register_
   seneca.add({
-    role: role, 
+    role: role,
     cmd:  'register',
 
     // identify user, various options
@@ -140,10 +143,10 @@ module.exports = function user(options) {
 
 
   // ### Login a user
-  // Pattern: _**role**:user, **cmd**:login_  
+  // Pattern: _**role**:user, **cmd**:login_
   // Creates an entry in _sys/login_ and generates a login token
   seneca.add({
-    role:role, 
+    role:role,
     cmd:'login',
 
     // identify user, various options
@@ -161,22 +164,22 @@ module.exports = function user(options) {
 
 
   // ### Confirm user
-  // Pattern: _**role**:user, **cmd**:confirm_  
+  // Pattern: _**role**:user, **cmd**:confirm_
   // Use confirmation code, provided to user by email (say), to confirm registration.
   seneca.add({
-    role: role, 
+    role: role,
     cmd:  'confirm',
-    
+
     code:{string$:true,required$:true} // confirmation code
   }, cmd_confirm )
 
 
 
   // ### Authorize user
-  // Pattern: _**role**:user, **cmd**:auth_  
+  // Pattern: _**role**:user, **cmd**:auth_
   // Validates that the token exists and is active
   seneca.add({
-    role: role, 
+    role: role,
     cmd:  'auth',
 
     token:{required$:true,string$:true} // login token
@@ -185,10 +188,10 @@ module.exports = function user(options) {
 
 
   // ### Logout user
-  // Pattern: _**role**:user, **cmd**:logout_  
+  // Pattern: _**role**:user, **cmd**:logout_
   // Mark token record in _sys/login_ as inactive
   seneca.add({
-    role: role, 
+    role: role,
     cmd:  'logout',
 
     token:{required$:true,string$:true} // login token
@@ -197,10 +200,10 @@ module.exports = function user(options) {
 
 
   // ### Clean user data
-  // Pattern: _**role**:user, **cmd**:clean_  
+  // Pattern: _**role**:user, **cmd**:clean_
   // Remove sensitive data fields such as password hash.
   seneca.add({
-    role: role, 
+    role: role,
     cmd:  'clean',
 
     user:{required$:true,entity$:'sys/user'}, // sys/user entity
@@ -209,48 +212,48 @@ module.exports = function user(options) {
 
 
   // ### Create a password reset entry
-  // Pattern: _**role**:user, **cmd**:create_reset_  
+  // Pattern: _**role**:user, **cmd**:create_reset_
   // Create an entry in _sys/reset_ that provides a reset token
   seneca.add( {role:role, cmd:'create_reset'},
               resolve_user(cmd_create_reset,false) )
 
 
   // ### Load a password reset entry
-  // Pattern: _**role**:user, **cmd**:load_reset_  
+  // Pattern: _**role**:user, **cmd**:load_reset_
   // Load a _sys/reset_ entry by reset token
   seneca.add( {role:role, cmd:'load_reset'},
               cmd_load_reset )
 
 
   // ### Execute a password reset
-  // Pattern: _**role**:user, **cmd**:execute_reset_  
+  // Pattern: _**role**:user, **cmd**:execute_reset_
   // Execute a _sys/reset_ entry by reset token, providing the new password.
   seneca.add( {role:role, cmd:'execute_reset'},
               cmd_execute_reset )
 
 
   // ### Update user details
-  // Pattern: _**role**:user, **cmd**:update_  
+  // Pattern: _**role**:user, **cmd**:update_
   seneca.add( {role:role, cmd:'update'},
               cmd_update )
 
 
   // ### Enable user
-  // Pattern: _**role**:user, **cmd**:_  
+  // Pattern: _**role**:user, **cmd**:_
   // TODO: rename to activate for consistency
   seneca.add( {role:role, cmd:'enable'},
               cmd_enable )
 
 
   // ### Disable user
-  // Pattern: _**role**:user, **cmd**:_  
+  // Pattern: _**role**:user, **cmd**:_
   // TODO: rename to deactivate for consistency
   seneca.add( {role:role, cmd:'disable'},
               cmd_disable )
 
 
   // ### Delete user
-  // Pattern: _**role**:user, **cmd**:_  
+  // Pattern: _**role**:user, **cmd**:_
   // TODO: rename to remove for consistency
   seneca.add( {role:role, cmd:'delete'},
               cmd_delete )
@@ -468,7 +471,7 @@ module.exports = function user(options) {
   // Generated fields:
   // - when: date and time of registration
   // - confirmcode: used for confirmation
-  // Provides: 
+  // Provides:
   // - success: {ok:true,user:}
   // - failure: {ok:false,why:,nick:}
   function cmd_register(args,done){
@@ -544,7 +547,7 @@ module.exports = function user(options) {
   // - nick, email: to resolve user
   // - user:     user entity
   // - password: password text, alias: pass
-  // Provides: 
+  // Provides:
   // - success: {ok:true,user:,login:}
   // - failure: {ok:false,why:,nick:}
   function cmd_login(args,done){
@@ -586,7 +589,11 @@ module.exports = function user(options) {
         },
         "role,cmd,password"))
 
-      login.token = login.id$, // DEPRECATED
+      // login.token = login.id$, // DEPRECATED
+      // login.token = jwt.sign({ id: login.id$ }, options.tokensecret, { expiresInMinutes: 60*5 });
+      login.token = jwt.sign({ id: login.id$ }, options.tokensecret, options.jwtoptions );
+
+      console.log('login token generated', login.token )
 
       login.save$( function( err, login ){
         if( err ) return done(err);
@@ -602,7 +609,7 @@ module.exports = function user(options) {
   // Confirm an existing user - using confirm code sent to user
   // - nick, email: to resolve user
   // - code: confirmcode
-  // Provides: 
+  // Provides:
   // - success: {ok:true,user:}
   // - failure: {ok:false,why:,nick:}
   function cmd_confirm(args,done){
@@ -635,36 +642,42 @@ module.exports = function user(options) {
 
   // Authorize an existing user - resolve using token
   // - token:    login token
-  // Provides: 
+  // Provides:
   // - success: {ok:true,user:,login:}
   // - failure: {ok:false,why:,token:}
   function cmd_auth(args,done){
-    var q = {id:args.token}
 
-    loginent.load$(q, function( err, login ) {
+    jwt.verify(args.token, options.tokensecret, function(err, decoded) {
+
       if( err ) return done(err);
 
-      if( !login ) {
-        return done(null,{ok:false,token:args.token,why:'login-not-found'})
-      }
+      var q = {id:decoded.id}
 
-      userent.load$( {id:login.user}, function( err, user ) {
+      loginent.load$(q, function( err, login ) {
         if( err ) return done(err);
 
-        if( !user ) {
-          return done(null,{ok:false,token:args.token,user:login.user,why:'user-not-found'})
+        if( !login ) {
+          return done(null,{ok:false,token:args.token,why:'login-not-found'})
         }
 
-        done(null,{user:user,login:login,ok:true})
+        userent.load$( {id:login.user}, function( err, user ) {
+          if( err ) return done(err);
+
+          if( !user ) {
+            return done(null,{ok:false,token:args.token,user:login.user,why:'user-not-found'})
+          }
+
+          done(null,{user:user,login:login,ok:true})
+        })
       })
-    })
+    });
   }
 
 
-  
+
   // Logout an existing user - resolve using token, idempotent
   // - token:    login token
-  // Provides: 
+  // Provides:
   // - success: {ok:true,user:,login:}
   function cmd_logout(args,done){
     var q = {id:args.token}
